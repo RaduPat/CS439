@@ -47,10 +47,20 @@ filesys_create (const char *name, off_t initial_size)
 {
   block_sector_t inode_sector = 0;
   struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
+
+  //our debugging code
+  bool allocate_success = free_map_allocate(1, &inode_sector);
+  bool create_success = inode_create (inode_sector, initial_size);
+  bool dir_success = dir_add (dir, name, inode_sector);
+  bool success = allocate_success && create_success && dir_success;
+
+  /*printf("allocate_success: %d\n", allocate_success);
+  printf("create_success: %d\n", create_success);
+  printf("dir_success: %d\n", dir_success);*/
+  /*bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
+                  && dir_add (dir, name, inode_sector));*/
   if (!success && inode_sector != 0) 
     free_map_release (inode_sector, 1);
   dir_close (dir);
