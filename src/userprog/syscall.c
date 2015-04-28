@@ -219,12 +219,13 @@ wait_h (tid_t tid)
 bool
 create_h (char *file, unsigned initial_size) 
 {
+	//printf("---------------------------------------init_size: %d: \n", initial_size);
 	check_pointer (file);
 	bool success = false;
 	lock_acquire (&syscall_lock);
 	success = filesys_create (file, (off_t) initial_size);
 	lock_release (&syscall_lock);
-
+	//printf("-------------------------------------------success: %d \n", success);
 	return success;
 }
 

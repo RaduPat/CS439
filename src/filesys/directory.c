@@ -168,12 +168,23 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     if (!e.in_use)
       break;
 
+  //printf("after inode_read_at\n");
+  //printf("--------------------------ofs: %d \n", ofs);
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
-  success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-  
+  off_t write_return = inode_write_at (dir->inode, &e, sizeof e, ofs);
+  //printf("write_return: %d\n", write_return);
+  //success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+  success = write_return == sizeof e;
+  //printf("-----------------------------write return: %d\n", write_return);
+  //printf("--------------------------------succ_in dir add: %d\n", success);
+  //printf("inode return value: %d\n", write_return);
+  //printf("----------------------------sizeof e: %d\n", sizeof e);
+  //printf("after inode_write_at\n success: %d\n", success);
+
+
  done:
   return success;
 }
