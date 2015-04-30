@@ -429,6 +429,24 @@ inode_close (struct inode *inode)
             }
           }
         }
+        else
+        {
+          if(inode->index_block_pointer != NULL) 
+          {
+            block_write(fs_device, inode->data.index_block, inode->index_block_pointer);
+          }
+          else if(inode->indirect_block_pointer != NULL) 
+          {
+            block_write(fs_device, inode->data.doubly_indirect_block, inode->indirect_block_pointer);
+          }
+          int i;
+          for(i = 0; i < INDIRECT_INDEX_BLOCKS; i++)
+          {
+            if(inode->indirect_index_blocks[i] != NULL)
+              block_write(fs_device, inode->indirect_block_pointer->index_sectors[i], inode->indirect_index_blocks[i]);
+          }
+          block_write(fs_device, inode->sector, inode);
+        }
 
       if (inode->index_block_pointer != NULL)
       {
