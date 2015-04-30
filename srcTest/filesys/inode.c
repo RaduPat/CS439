@@ -84,7 +84,7 @@ byte_to_sector (struct inode *inode, off_t pos)
 
   else if (sector_index < INODE_DIRECT_BLOCKS + INDEX_DIRECT_BLOCKS)
   {
-    printf("*********** 1\n");
+    //printf("*********** 1\n");
     if (inode->index_block_pointer == NULL)
     { 
       inode->index_block_pointer =  calloc(1, sizeof (struct index_block));
@@ -95,7 +95,7 @@ byte_to_sector (struct inode *inode, off_t pos)
 
   else if (sector_index < INODE_DIRECT_BLOCKS + INDEX_DIRECT_BLOCKS + INDIRECT_INDEX_BLOCKS * INDEX_DIRECT_BLOCKS)
   {
-    printf("*********** 2\n");
+    //printf("*********** 2\n");
     unsigned index_block_index = (sector_index - (INODE_DIRECT_BLOCKS + INDEX_DIRECT_BLOCKS))/INDEX_DIRECT_BLOCKS;
     unsigned direct_block_index = (sector_index - (INODE_DIRECT_BLOCKS + INDEX_DIRECT_BLOCKS))%INDEX_DIRECT_BLOCKS;
     if (inode->indirect_index_blocks[index_block_index] == NULL)
@@ -111,7 +111,7 @@ byte_to_sector (struct inode *inode, off_t pos)
     return inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index];
   }
   else{
-    printf("*********** 3\n");
+   //printf("*********** 3\n");
     return -1;
   }
 }
@@ -152,7 +152,7 @@ inode_create (block_sector_t sector, off_t length)
 
     disk_inode->length = length;
     disk_inode->magic = INODE_MAGIC;
-    char zeros[BLOCK_SECTOR_SIZE];
+    static char zeros[BLOCK_SECTOR_SIZE];
 
     bool direct_success;
     bool index_success;
@@ -185,6 +185,7 @@ inode_create (block_sector_t sector, off_t length)
     else
       success = false;
 
+    //printf("CREATE- inode_disk address: %x\n", disk_inode);
     block_write (fs_device, sector, disk_inode);
     free(disk_inode);
 
@@ -271,34 +272,6 @@ inode_create (block_sector_t sector, off_t length)
     return success;
   }
 
-
-  /* If this assertion fails, the inode structure is not exactly
-     one sector in size, and you should fix that. */
- /* ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
-
-  disk_inode = calloc (1, sizeof *disk_inode);
-  if (disk_inode != NULL)
-    {
-      size_t sectors = bytes_to_sectors (length);
-      disk_inode->length = length;
-      disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
-        {
-          block_write (fs_device, sector, disk_inode);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                block_write (fs_device, disk_inode->start + i, zeros);
-            }
-          success = true; 
-        } 
-      free (disk_inode);
-    }
-  return success;*/
-
 /* Reads an inode from SECTOR
    and returns a `struct inode' that contains it.
    Returns a null pointer if memory allocation fails. */
@@ -307,7 +280,6 @@ inode_open (block_sector_t sector)
 {
   struct list_elem *e;
   struct inode *inode;
-
   /* Check whether this inode is already open. */
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e)) 
@@ -324,6 +296,8 @@ inode_open (block_sector_t sector)
   inode = malloc (sizeof *inode);
   if (inode == NULL)
     return NULL;
+
+  //printf("OPEN: inode_disk address %x\n", &inode->data);
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
@@ -369,6 +343,8 @@ inode_close (struct inode *inode)
   if (inode == NULL)
     return;
 
+  //printf("CLOSE: inode_disk address %x\n", &inode->data);
+
   /* Release resources if this was the last opener. */
   if (--inode->open_cnt == 0)
     {
@@ -386,41 +362,45 @@ inode_close (struct inode *inode)
               free_map_release (inode->data.direct_blocks[i], 1);
             }
           }
-
-          if (inode->index_block_pointer == NULL)
-          { 
-            inode->index_block_pointer =  calloc(1, sizeof (struct index_block));
-            block_read(fs_device, inode->data.index_block, inode->index_block_pointer);
-          }
-          for (i = 0; i < INDEX_DIRECT_BLOCKS; ++i)
+          if(inode->data.index_block != -1)
           {
-            if (inode->index_block_pointer->direct_blocks[i] != -1)
+            if (inode->index_block_pointer == NULL)
+            { 
+              inode->index_block_pointer =  calloc(1, sizeof (struct index_block));
+              block_read(fs_device, inode->data.index_block, inode->index_block_pointer);
+            }
+            for (i = 0; i < INDEX_DIRECT_BLOCKS; ++i)
             {
-              free_map_release (inode->index_block_pointer->direct_blocks[i], 1);
+              if (inode->index_block_pointer->direct_blocks[i] != -1)
+              {
+                free_map_release (inode->index_block_pointer->direct_blocks[i], 1);
+              }
             }
           }
-
-          if (inode->indirect_block_pointer == NULL)
+          if(inode->data.doubly_indirect_block != -1) 
           {
-            inode->indirect_block_pointer = calloc(1, sizeof (struct indirect_block));
-            block_read(fs_device, inode->data.doubly_indirect_block, inode->indirect_block_pointer);
-          }
-          for (i = 0; i < INDIRECT_INDEX_BLOCKS; ++i)
-          {
-            if (inode->indirect_block_pointer->index_sectors[i] != -1)
+            if (inode->indirect_block_pointer == NULL)
             {
-              if (inode->indirect_index_blocks[i] == NULL)
+              inode->indirect_block_pointer = calloc(1, sizeof (struct indirect_block));
+              block_read(fs_device, inode->data.doubly_indirect_block, inode->indirect_block_pointer);
+            }
+            for (i = 0; i < INDIRECT_INDEX_BLOCKS; ++i)
+            {
+              if (inode->indirect_block_pointer->index_sectors[i] != -1)
               {
-                inode->indirect_index_blocks[i] = calloc(1, sizeof (struct index_block));
-                block_read(fs_device, inode->indirect_block_pointer->index_sectors[i], inode->indirect_index_blocks[i]);
-              }
-              for (j = 0; j < INDEX_DIRECT_BLOCKS; ++j)
-              {
-                if(inode->indirect_index_blocks[i]->direct_blocks[j] != -1){
-                  free_map_release(inode->indirect_index_blocks[i]->direct_blocks[j], 1);
+                if (inode->indirect_index_blocks[i] == NULL)
+                {
+                  inode->indirect_index_blocks[i] = calloc(1, sizeof (struct index_block));
+                  block_read(fs_device, inode->indirect_block_pointer->index_sectors[i], inode->indirect_index_blocks[i]);
                 }
+                for (j = 0; j < INDEX_DIRECT_BLOCKS; ++j)
+                {
+                  if(inode->indirect_index_blocks[i]->direct_blocks[j] != -1){
+                    free_map_release(inode->indirect_index_blocks[i]->direct_blocks[j], 1);
+                  }
+                }
+                free_map_release (inode->indirect_block_pointer->index_sectors[i], 1);
               }
-              free_map_release (inode->indirect_block_pointer->index_sectors[i], 1);
             }
           }
         }
@@ -462,6 +442,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
+
+
+  //printf("READ: inode_disk address %x\n", &inode->data);
 
   while (size > 0) 
     {
@@ -521,17 +504,18 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
 
+  //printf("WRITE inode_disk address %x\n", &inode->data);
+
   if (inode->deny_write_cnt)
     return 0;
 
-  printf("$$$$$$$$$$ INODE_WRITE_AT\n");
+  //printf("$$$$$$$$$$ INODE_WRITE_AT\n");
   while (size > 0) 
     {
-      block_sector_t sector_idx = inode->data.direct_blocks[offset / BLOCK_SECTOR_SIZE];
 
       //printf("#################\n");
       //printf("#########%x %d %d\n",inode, offset / BLOCK_SECTOR_SIZE, sector_idx);
-      //block_sector_t sector_idx = byte_to_sector (inode, offset);
+      block_sector_t sector_idx = byte_to_sector (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */

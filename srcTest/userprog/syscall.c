@@ -223,7 +223,7 @@ create_h (char *file, unsigned initial_size)
 	bool success = false;
 	lock_acquire (&syscall_lock);
 	success = filesys_create (file, (off_t) initial_size);
-	printf("######### %d\n", success);
+	//	printf("######### %d\n", success);
 	lock_release (&syscall_lock);
 
 	return success;
