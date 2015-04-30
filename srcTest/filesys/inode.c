@@ -61,7 +61,7 @@ struct inode
 bool direct_block_allocation (struct inode_disk *, char *, size_t numsectors);
 bool index_block_allocation(block_sector_t *, char *, size_t numsectors);
 bool indirect_block_allocation(struct inode_disk *, char *zeros, size_t numsectors);
-
+bool allocate_single_sector(block_sector_t *);
 
 
 /* Returns the block device sector that contains byte offset POS
@@ -69,7 +69,7 @@ bool indirect_block_allocation(struct inode_disk *, char *zeros, size_t numsecto
    Returns -1 if INODE does not contain data for a byte at offset
    POS. */
 static block_sector_t
-byte_to_sector (struct inode *inode, off_t pos) 
+byte_to_sector (struct inode *inode, off_t pos, bool for_write) 
 {
   ASSERT (inode != NULL);
 
@@ -77,8 +77,11 @@ byte_to_sector (struct inode *inode, off_t pos)
 
   if (sector_index < INODE_DIRECT_BLOCKS)
   {
-    //printf("@@@@@@@ sector_index %d\n", sector_index);
-    //printf("ea%d", pos);
+    if(for_write && inode->data.direct_blocks[sector_index] == -1) 
+    {
+      if(!allocate_single_sector(&inode->data.direct_blocks[sector_index]))
+        PANIC("Not enough sectors");
+    }
     return inode->data.direct_blocks[sector_index];
   }
 
@@ -89,6 +92,11 @@ byte_to_sector (struct inode *inode, off_t pos)
     { 
       inode->index_block_pointer =  calloc(1, sizeof (struct index_block));
       block_read(fs_device, inode->data.index_block, inode->index_block_pointer);
+    }
+    if(for_write && inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS] == -1)
+    {
+      if(!allocate_single_sector(&inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS]))
+        PANIC("Not Enough Sectors (index)");
     }
     return inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS];
   }
@@ -108,12 +116,29 @@ byte_to_sector (struct inode *inode, off_t pos)
       inode->indirect_index_blocks[index_block_index] = calloc(1, sizeof (struct index_block));
       block_read(fs_device, inode->indirect_block_pointer->index_sectors[index_block_index], inode->indirect_index_blocks[index_block_index]);
     }
+    if(for_write && inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index] == -1)
+    {
+      if(!allocate_single_sector(&inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index]))
+        PANIC("Not Enough Sectors (indirect)");
+    }
     return inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index];
   }
   else{
-   //printf("*********** 3\n");
-    return -1;
+    PANIC("Above limit of max file size");
   }
+}
+
+bool
+allocate_single_sector(block_sector_t * sector)
+{
+  static char zeros[BLOCK_SECTOR_SIZE];
+  bool success = true;
+  if(free_map_allocate(1, sector))
+    block_write(fs_device, *sector, zeros);
+  else
+    success = false;
+
+  return success;
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -449,7 +474,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
+      block_sector_t sector_idx = byte_to_sector (inode, offset, false);
+      if(sector_idx == -1) //Trying to read an unallocated sector
+        return bytes_read; 
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -504,18 +531,19 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
 
-  //printf("WRITE inode_disk address %x\n", &inode->data);
+  if(size+offset > inode->data.length)
+    inode->data.length = size+offset;
 
   if (inode->deny_write_cnt)
     return 0;
 
-  //printf("$$$$$$$$$$ INODE_WRITE_AT\n");
   while (size > 0) 
     {
 
       //printf("#################\n");
       //printf("#########%x %d %d\n",inode, offset / BLOCK_SECTOR_SIZE, sector_idx);
-      block_sector_t sector_idx = byte_to_sector (inode, offset);
+      block_sector_t sector_idx = byte_to_sector (inode, offset, true);
+  
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -563,6 +591,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   return bytes_written;
 }
+
 
 /* Disables writes to INODE.
    May be called at most once per inode opener. */
