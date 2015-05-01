@@ -70,7 +70,7 @@ void * bring_in_sector(bool is_for_write, block_sector_t * target_sector, unsign
    Returns -1 if INODE does not contain data for a byte at offset
    POS. */
 static block_sector_t
-byte_to_sector (struct inode *inode, off_t pos, bool for_write) 
+byte_to_sector (struct inode *inode, off_t pos, bool must_grow) 
 {
   ASSERT (inode != NULL);
 
@@ -78,7 +78,7 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
 
   if (sector_index < INODE_DIRECT_BLOCKS)
   {
-    if(for_write && inode->data.direct_blocks[sector_index] == -1) 
+    if(must_grow && inode->data.direct_blocks[sector_index] == -1) 
     {
       if(!allocate_single_sector(&inode->data.direct_blocks[sector_index]))
         PANIC("Not enough sectors");
@@ -90,7 +90,7 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
   {
     if (inode->index_block_pointer == NULL)
     { 
-      inode->index_block_pointer = (struct index_block *) bring_in_sector(for_write, &inode->data.index_block, INDEX_DIRECT_BLOCKS);
+      inode->index_block_pointer = (struct index_block *) bring_in_sector(must_grow, &inode->data.index_block, INDEX_DIRECT_BLOCKS);
       if (inode->index_block_pointer == NULL)
       {
         // if accessing in a read, don't do anything
@@ -114,7 +114,7 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
         block_read(fs_device, inode->data.index_block, inode->index_block_pointer);
       }  */
     }
-    if(for_write && inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS] == -1)
+    if(must_grow && inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS] == -1)
     {
       if(!allocate_single_sector(&inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS]))
         PANIC("Not Enough Sectors (index)");
@@ -130,7 +130,7 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
     {
       if (inode->indirect_block_pointer == NULL)
       {
-        inode->indirect_block_pointer = (struct indirect_block *) bring_in_sector(for_write, &inode->data.doubly_indirect_block, INDIRECT_INDEX_BLOCKS);
+        inode->indirect_block_pointer = (struct indirect_block *) bring_in_sector(must_grow, &inode->data.doubly_indirect_block, INDIRECT_INDEX_BLOCKS);
         if (inode->indirect_block_pointer == NULL)
         { // if accessing in a read, don't do anything
           return -1;
@@ -154,7 +154,7 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
         }*/
       }
 
-      inode->indirect_index_blocks[index_block_index] = (struct index_block *) bring_in_sector(for_write, &inode->indirect_block_pointer->index_sectors[index_block_index], INDEX_DIRECT_BLOCKS);
+      inode->indirect_index_blocks[index_block_index] = (struct index_block *) bring_in_sector(must_grow, &inode->indirect_block_pointer->index_sectors[index_block_index], INDEX_DIRECT_BLOCKS);
       if (inode->indirect_index_blocks[index_block_index] == NULL)
       { // if accessing in a read, don't do anything
         return -1;
@@ -163,7 +163,7 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
       /*inode->indirect_index_blocks[index_block_index] = calloc(1, sizeof (struct index_block));
       block_read(fs_device, inode->indirect_block_pointer->index_sectors[index_block_index], inode->indirect_index_blocks[index_block_index]);*/
     }
-    if(for_write && inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index] == -1)
+    if(must_grow && inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index] == -1)
     {
       if(!allocate_single_sector(&inode->indirect_index_blocks[index_block_index]->direct_blocks[direct_block_index]))
         PANIC("Not Enough Sectors (indirect)");
@@ -176,10 +176,10 @@ byte_to_sector (struct inode *inode, off_t pos, bool for_write)
 }
 
 void *
-bring_in_sector(bool is_for_write, block_sector_t * target_sector, unsigned num_sub_blocks){
+bring_in_sector(bool must_grow, block_sector_t * target_sector, unsigned num_sub_blocks){
   void * storage_location;
   int i;
-  if(is_for_write && *target_sector == -1){//when writing, and trying to grow, grow indirect block 
+  if(must_grow && *target_sector == -1){//when writing, and trying to grow, grow indirect block 
     if(!allocate_single_sector(target_sector))
       PANIC("Not Enough Sectors (indirect_block)");
     else{
@@ -189,7 +189,7 @@ bring_in_sector(bool is_for_write, block_sector_t * target_sector, unsigned num_
       }
     }
   }
-  else if(!is_for_write && *target_sector == -1){//when reading, and trying to grow, don't grow
+  else if(!must_grow && *target_sector == -1){//when reading, and trying to grow, don't grow
     return NULL;
   }
   else{// lazy loading of indirect sector
@@ -558,14 +558,17 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
+  bool have_to_grow = false;
 
+  if(size+offset < inode->data.length)
+    have_to_grow = true;
 
   //printf("READ: inode_disk address %x\n", &inode->data);
 
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      block_sector_t sector_idx = byte_to_sector (inode, offset, false);
+      block_sector_t sector_idx = byte_to_sector (inode, offset, have_to_grow);
       if(sector_idx == -1) //Trying to read an unallocated sector
         return bytes_read; 
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
@@ -622,7 +625,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
 
-  if(size+offset > inode->data.length)
+  if(size+offset > inode->data.length)//do we have to use >=?
     inode->data.length = size+offset;
 
   if (inode->deny_write_cnt)
