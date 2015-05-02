@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/directory.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -25,14 +26,14 @@
 static struct list ready_list;
 
 /* List of all processes.  Processes are added to this list
-   when they are first scheduled and removed when they exit. */
+   when they are first scheduled and removed when they exFit. */
 static struct list all_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
-static struct thread *initial_thread;
+struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
@@ -189,6 +190,8 @@ thread_create (const char *name, int priority,
   /* Andrew and Nick drove here */
   // set parent
   t->parent = thread_current();
+
+  t->curr_dir = t->parent->curr_dir;
 
   // create status holder
   struct status_holder * current_statusholder;

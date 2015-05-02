@@ -10,8 +10,11 @@
 #include "threads/vaddr.h"
 #include "devices/input.h"
 #include "userprog/pagedir.h"
+#include "filesys/directory.h"
+#include "filesys/inode.h"
 
 #define MAX_FILES 128
+#define MAX_DIR_DEPTH 20
 
 static void syscall_handler (struct intr_frame *);
 
@@ -31,9 +34,12 @@ int write_h (int file_descriptor, void *buffer, unsigned size);
 int seek_h (int file_descriptor, unsigned position);
 unsigned tell_h (int file_descriptor);
 int close_h (int file_descriptor);
+bool mkdir_h (const char *path);
 
 // checks the validity of a pointer
 void check_pointer (void *pointer);
+//parse the path given
+char ** parse_path (char * path);
 
 // returns a pointer to the file given the file descriptor
 struct file * find_open_file (int fd);
@@ -179,7 +185,13 @@ syscall_handler (struct intr_frame *f UNUSED)
 	  			f->eax = close_h (file_descriptor);
 	  		}
 	  	break;
-  }
+	  	case SYS_MKDIR:
+	  		{
+	  			check_pointer (esp_int_pointer+1);
+	  			char ** dir_path = (char **) (esp_int_pointer+1);
+	  			f->eax = mkdir_h (*dir_path);
+	  		}
+  	}
 }
 
 void
@@ -359,6 +371,69 @@ close_h (int file_descriptor)
 	return 1;
 }
 
+bool
+mkdir_h (const char *path)
+{
+	struct dir * starting_dir;
+	struct dir * target_dir;
+	if(path[0] == '/')
+		starting_dir = dir_open_root ();
+	else
+		starting_dir = thread_current()->curr_dir;
+
+	target_dir = starting_dir;
+
+
+	char * dir_path;
+	dir_path = malloc(strlen(path)+1);
+	strlcpy (dir_path, path, strlen(path)+1);
+	char ** dir_names = parse_path(dir_path);
+
+	int i = 0;
+	bool success = true;
+	struct inode * target_inode = NULL;
+	while(dir_names[i+1] != NULL && success) 
+	{
+		success = dir_lookup(target_dir, dir_names[i], &target_inode);
+		if(success)
+		{
+			if(target_inode->data.is_dir)
+				target_dir = dir_open(target_inode);
+			else
+				success = false;
+		}
+		else
+			success = false;
+
+		i++;
+	}
+
+	//LAST ENTRY
+	if(dir_names[i] != NULL)
+	{
+		success = dir_lookup(target_dir, dir_names[i], &target_inode);
+
+		if(success)
+			success = false; //the directory is already created
+		else
+		{
+			block_sector_t new_dir_sector;
+			if(!free_map_allocate(1, &new_dir_sector))
+				PANIC("No space for new directory");
+			success = dir_create(new_dir_sector, 2) && dir_add(target_dir, dir_names[i], new_dir_sector);
+		}
+	}
+	else
+		success = false;
+
+	if(target_inode != NULL)
+		inode_close(target_inode);
+
+	free(dir_path);
+	free(dir_names);
+	return success;
+}
+
 struct file *
 find_open_file (int fd) 
 {
@@ -411,4 +486,24 @@ find_fd(struct file * files[], struct file * target)
 				return i;
 		}
 	return -1;
+}
+
+/* Function to parse a directory path, absolute or relative, in order
+to get each directory name */
+char **
+parse_path (char * path)
+{
+
+	char ** dir_names = calloc(MAX_DIR_DEPTH+1, sizeof (char *));
+ 	char *token, *save_ptr;
+ 	int dir_depth_counter = 0;
+
+	for (token = strtok_r (path, "/", &save_ptr); token != NULL;
+	      token = strtok_r (NULL, "/", &save_ptr))
+	  {
+	    dir_names[dir_depth_counter] = token;
+	    dir_depth_counter++;
+	  }
+
+	return dir_names;
 }

@@ -1,5 +1,4 @@
 #include "filesys/inode.h"
-#include <list.h>
 #include <debug.h>
 #include <round.h>
 #include <string.h>
@@ -10,31 +9,6 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
-#define INODE_DIRECT_BLOCKS 124
-#define INDEX_DIRECT_BLOCKS 128
-#define INDIRECT_INDEX_BLOCKS 128
-
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    block_sector_t doubly_indirect_block;                        // 4 bytes
-    block_sector_t index_block;                                  // 4 bytes
-    block_sector_t direct_blocks[INODE_DIRECT_BLOCKS];           // 4 * 124 bytes
-  };
-
-struct index_block
-{
-  block_sector_t direct_blocks[INDEX_DIRECT_BLOCKS];
-};
-
-struct indirect_block
-{
-  block_sector_t index_sectors[INDIRECT_INDEX_BLOCKS];
-};
-
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
 static inline size_t
@@ -42,20 +16,6 @@ bytes_to_sectors (off_t size)
 {
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
-
-/* In-memory inode. */
-struct inode 
-  {
-    struct list_elem elem;              /* Element in inode list. */
-    block_sector_t sector;              /* Sector number of disk location. */
-    int open_cnt;                       /* Number of openers. */
-    bool removed;                       /* True if deleted, false otherwise. */
-    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-    struct index_block * index_block_pointer;
-    struct indirect_block * indirect_block_pointer;
-    struct index_block * indirect_index_blocks[INDIRECT_INDEX_BLOCKS];
-  };
 
 
 bool direct_block_allocation (struct inode_disk *, char *, size_t numsectors);
@@ -230,7 +190,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length)
+inode_create (block_sector_t sector, off_t length, bool is_dir)
 {
 
 
@@ -248,6 +208,7 @@ inode_create (block_sector_t sector, off_t length)
     size_t sectors = bytes_to_sectors (length);
 
     disk_inode->length = length;
+    disk_inode->is_dir = is_dir;
     disk_inode->magic = INODE_MAGIC;
     static char zeros[BLOCK_SECTOR_SIZE];
 
