@@ -118,6 +118,8 @@ struct thread
     struct file * code_file;               /* file that the thread is currently executing */
     int index_fd;                         /* # calls to file open, starting from 2 */
 
+    struct dir * curr_dir;                /* current directory */
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
