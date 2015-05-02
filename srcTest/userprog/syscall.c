@@ -35,6 +35,7 @@ int seek_h (int file_descriptor, unsigned position);
 unsigned tell_h (int file_descriptor);
 int close_h (int file_descriptor);
 bool mkdir_h (const char *path);
+ bool isdir_h (int fd);
 
 // checks the validity of a pointer
 void check_pointer (void *pointer);
@@ -191,6 +192,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 	  			char ** dir_path = (char **) (esp_int_pointer+1);
 	  			f->eax = mkdir_h (*dir_path);
 	  		}
+	  	break;
+	  	case SYS_ISDIR:
+	  		{
+	  			check_pointer (esp_int_pointer+1);
+	  			int fd = *(esp_int_pointer+1);
+	  			f->eax = isdir_h(fd);
+	  		}
+	  	break;
   	}
 }
 
@@ -320,7 +329,7 @@ write_h (int file_descriptor, void *buffer, unsigned size)
 		{
 			int bytes_written = -1;
 			struct file *found_file = find_open_file (file_descriptor);
-			if (found_file != NULL)
+			if (found_file != NULL && !found_file->inode->data.is_dir)
 				{
 					lock_acquire (&syscall_lock);
 					bytes_written = file_write (found_file, buffer, size);
@@ -374,6 +383,7 @@ close_h (int file_descriptor)
 bool
 mkdir_h (const char *path)
 {
+	check_pointer(path);
 	struct dir * starting_dir;
 	struct dir * target_dir;
 	if(path[0] == '/')
@@ -432,6 +442,18 @@ mkdir_h (const char *path)
 	free(dir_path);
 	free(dir_names);
 	return success;
+}
+
+bool
+isdir_h (int file_descriptor){
+	struct file *found_file = find_open_file (file_descriptor);
+	if (found_file != NULL)
+	{
+		return found_file->inode->data.is_dir;
+	}
+	else{
+		return false;// false is also used to denote that an invalide fd was passed in
+	}
 }
 
 struct file *
