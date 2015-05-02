@@ -35,7 +35,7 @@ int seek_h (int file_descriptor, unsigned position);
 unsigned tell_h (int file_descriptor);
 int close_h (int file_descriptor);
 bool mkdir_h (const char *path);
- bool isdir_h (int fd);
+bool isdir_h (int fd);
 
 // checks the validity of a pointer
 void check_pointer (void *pointer);
@@ -389,7 +389,7 @@ mkdir_h (const char *path)
 	if(path[0] == '/')
 		starting_dir = dir_open_root ();
 	else
-		starting_dir = thread_current()->curr_dir;
+		starting_dir = dir_reopen (thread_current()->curr_dir);
 
 	target_dir = starting_dir;
 
@@ -408,7 +408,10 @@ mkdir_h (const char *path)
 		if(success)
 		{
 			if(target_inode->data.is_dir)
+			{
+				dir_close(target_dir);
 				target_dir = dir_open(target_inode);
+			}
 			else
 				success = false;
 		}
