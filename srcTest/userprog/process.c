@@ -275,7 +275,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   strlcpy (t->name, argv[0], sizeof t->name);
 
   /* Open executable file. */
-  file = filesys_open (argv[0]);
+  // we assume that executables are always placed in the root directory
+  struct dir * root_dir = dir_open_root();
+  file = filesys_open (argv[0], root_dir);
+  dir_close(root_dir);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", argv[0]);

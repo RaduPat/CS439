@@ -34,8 +34,9 @@ int write_h (int file_descriptor, void *buffer, unsigned size);
 int seek_h (int file_descriptor, unsigned position);
 unsigned tell_h (int file_descriptor);
 int close_h (int file_descriptor);
-bool mkdir_h (const char *path);
+bool mkdir_h (const char *);
 bool isdir_h (int fd);
+bool chdir_h (const char *);
 
 // checks the validity of a pointer
 void check_pointer (void *pointer);
@@ -44,6 +45,8 @@ char ** parse_path (char * path);
 
 // returns a pointer to the file given the file descriptor
 struct file * find_open_file (int fd);
+// traverses the directory structure
+struct dir * get_target_dir(struct dir *, char **, int *);
 
 /* function to find the file descriptor of a file
     This function takes as input the file for which
@@ -200,6 +203,13 @@ syscall_handler (struct intr_frame *f UNUSED)
 	  			f->eax = isdir_h(fd);
 	  		}
 	  	break;
+	  	case SYS_CHDIR:
+	  		{
+	  			check_pointer (esp_int_pointer+1);
+	  			char ** dir_path = (char **) (esp_int_pointer + 1);
+	  			f->eax = chdir_h (*dir_path);
+	  		}
+	  	break;
   	}
 }
 
@@ -238,41 +248,155 @@ wait_h (tid_t tid)
 }
 
 bool
-create_h (char *file, unsigned initial_size) 
+create_h (char *path2file, unsigned initial_size) 
 {
-	check_pointer (file);
-	bool success = false;
-	lock_acquire (&syscall_lock);
-	success = filesys_create (file, (off_t) initial_size);
-	//	printf("######### %d\n", success);
-	lock_release (&syscall_lock);
+	check_pointer (path2file);
+
+	struct dir * starting_dir;
+	struct dir * target_dir;
+	if(path2file[0] == '/')
+		starting_dir = dir_open_root ();
+	else
+		starting_dir = dir_reopen (thread_current()->curr_dir);
+
+	char * dir_path;
+	dir_path = malloc(strlen(path2file)+1);
+	strlcpy (dir_path, path2file, strlen(path2file)+1);
+	char ** dir_names = parse_path(dir_path);
+	bool success = true;
+	int index_to_dir_name = -1;
+	struct inode * target_inode = NULL;
+
+	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
+
+	if (target_dir == NULL)
+	{
+		success = false;
+	}
+
+	if(dir_names[index_to_dir_name] != NULL && success)
+	{
+		success = dir_lookup(target_dir, dir_names[index_to_dir_name], &target_inode);
+
+		if(success)
+			success = false; //the file is already created
+		else
+		{
+			lock_acquire (&syscall_lock);
+			success = filesys_create (dir_names[index_to_dir_name], (off_t) initial_size, target_dir);
+			lock_release (&syscall_lock);
+		}
+	}
+	else
+		success = false;
+
+	if (target_dir != NULL)
+	{
+		dir_close(target_dir);
+	}
+	if (target_inode != NULL)
+	{
+		inode_close(target_inode);
+	}
+	free(dir_path);
+	free(dir_names);
 
 	return success;
 }
 
 /* Andrew drove here */
 bool
-remove_h (char *file)
+remove_h (char *path2file)
 {
-	check_pointer (file);
-	lock_acquire (&syscall_lock);
-	bool success = filesys_remove (file);
-	lock_release (&syscall_lock);
+	check_pointer (path2file);
+	struct dir * starting_dir;
+	struct dir * target_dir;
+	if(path2file[0] == '/')
+		starting_dir = dir_open_root ();
+	else
+		starting_dir = dir_reopen (thread_current()->curr_dir);
+
+	char * dir_path;
+	dir_path = malloc(strlen(path2file)+1);
+	strlcpy (dir_path, path2file, strlen(path2file)+1);
+	char ** dir_names = parse_path(dir_path);
+	bool success = true;
+	int index_to_dir_name = -1;
+
+	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
+
+	if (target_dir == NULL)
+	{
+		success = false;
+	}
+
+	if(dir_names[index_to_dir_name] != NULL && success)
+	{
+		lock_acquire (&syscall_lock);
+		success = filesys_remove (dir_names[index_to_dir_name], target_dir);
+		lock_release (&syscall_lock);
+	}
+	else
+		success = false;
+
+	if (target_dir != NULL)
+		dir_close(target_dir);
+
+	free(dir_path);
+	free(dir_names);
+
 	return success;
 }
 
 int
-open_h (char *file)
+open_h (char *path2file)
 {
-	check_pointer (file);
-	lock_acquire (&syscall_lock);
-	struct file *open_file = filesys_open (file);
-	lock_release (&syscall_lock);
-	if (open_file == NULL)
+	check_pointer (path2file);
+	struct dir * starting_dir;
+	struct dir * target_dir;
+	if(path2file[0] == '/')
+		starting_dir = dir_open_root ();
+	else
+		starting_dir = dir_reopen (thread_current()->curr_dir);
+
+	char * dir_path;
+	dir_path = malloc(strlen(path2file)+1);
+	strlcpy (dir_path, path2file, strlen(path2file)+1);
+	char ** dir_names = parse_path(dir_path);
+	bool success = true;
+	struct file *open_file = NULL;
+	int index_to_dir_name = -1;
+
+	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
+
+	if (target_dir == NULL)
+	{
+		success = false;
+	}
+
+	if(dir_names[index_to_dir_name] != NULL && success)
+	{
+		lock_acquire (&syscall_lock);
+		open_file = filesys_open (dir_names[index_to_dir_name], target_dir);
+		lock_release (&syscall_lock);
+		if (open_file == NULL)
+			success = false;
+		else
+			assign_fd (open_file, thread_current () -> open_files);
+	}
+	else
+		success = false;
+
+	if (target_dir != NULL)
+		dir_close(target_dir);
+
+	free(dir_path);
+	free(dir_names);
+
+	if (success)
+		return find_fd (thread_current ()->open_files, open_file);
+	else
 		return -1;
-	assign_fd (open_file, thread_current () -> open_files);
-	
-	return find_fd (thread_current ()->open_files, open_file);
 }
 
 int 
@@ -391,40 +515,25 @@ mkdir_h (const char *path)
 	else
 		starting_dir = dir_reopen (thread_current()->curr_dir);
 
-	target_dir = starting_dir;
-
-
 	char * dir_path;
 	dir_path = malloc(strlen(path)+1);
 	strlcpy (dir_path, path, strlen(path)+1);
 	char ** dir_names = parse_path(dir_path);
-
-	int i = 0;
 	bool success = true;
+	int index_to_dir_name = -1;
 	struct inode * target_inode = NULL;
-	while(dir_names[i+1] != NULL && success) 
-	{
-		success = dir_lookup(target_dir, dir_names[i], &target_inode);
-		if(success)
-		{
-			if(target_inode->data.is_dir)
-			{
-				dir_close(target_dir);
-				target_dir = dir_open(target_inode);
-			}
-			else
-				success = false;
-		}
-		else
-			success = false;
 
-		i++;
+	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
+
+	if (target_dir == NULL)
+	{
+		success = false;
 	}
 
 	//LAST ENTRY
-	if(dir_names[i] != NULL)
+	if(dir_names[index_to_dir_name] != NULL && success)
 	{
-		success = dir_lookup(target_dir, dir_names[i], &target_inode);
+		success = dir_lookup(target_dir, dir_names[index_to_dir_name], &target_inode);
 
 		if(success)
 			success = false; //the directory is already created
@@ -433,12 +542,14 @@ mkdir_h (const char *path)
 			block_sector_t new_dir_sector;
 			if(!free_map_allocate(1, &new_dir_sector))
 				PANIC("No space for new directory");
-			success = dir_create(new_dir_sector, 2) && dir_add(target_dir, dir_names[i], new_dir_sector);
+			success = dir_create(new_dir_sector, 2) && dir_add(target_dir, dir_names[index_to_dir_name], new_dir_sector);
 		}
 	}
 	else
 		success = false;
 
+	if (target_dir != NULL)
+		dir_close(target_dir);
 	if(target_inode != NULL)
 		inode_close(target_inode);
 
@@ -448,7 +559,8 @@ mkdir_h (const char *path)
 }
 
 bool
-isdir_h (int file_descriptor){
+isdir_h (int file_descriptor)
+{
 	struct file *found_file = find_open_file (file_descriptor);
 	if (found_file != NULL)
 	{
@@ -457,6 +569,61 @@ isdir_h (int file_descriptor){
 	else{
 		return false;// false is also used to denote that an invalide fd was passed in
 	}
+}
+
+bool
+chdir_h (const char *path){
+	check_pointer (path);
+	struct dir * starting_dir;
+	struct dir * target_dir;
+	if(path[0] == '/')
+		starting_dir = dir_open_root ();
+	else
+		starting_dir = dir_reopen (thread_current()->curr_dir);
+
+	char * dir_path;
+	dir_path = malloc(strlen(path)+1);
+	strlcpy (dir_path, path, strlen(path)+1);
+	char ** dir_names = parse_path(dir_path);
+	bool success = true;
+	int index_to_dir_name = -1;
+	struct inode * target_inode = NULL;
+
+	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
+
+	if (target_dir == NULL)
+	{
+		success = false;
+	}
+
+	//LAST ENTRY
+	if(dir_names[index_to_dir_name] != NULL && success)
+	{
+		success = dir_lookup(target_dir, dir_names[index_to_dir_name], &target_inode);
+
+		if(success)
+			if (target_inode->data.is_dir)
+			{
+				dir_close(thread_current()->curr_dir);// what if we close the root directory? reopen the root directory
+				thread_current()->curr_dir = dir_open(target_inode);
+			}
+			else
+				success = false;
+		else
+		{
+			success = false;
+		}
+	}
+	else
+		success = false;
+
+	if (target_dir != NULL)
+	{
+		dir_close(target_dir);
+	}
+	free(dir_path);
+	free(dir_names);
+	return success;
 }
 
 struct file *
@@ -518,7 +685,6 @@ to get each directory name */
 char **
 parse_path (char * path)
 {
-
 	char ** dir_names = calloc(MAX_DIR_DEPTH+1, sizeof (char *));
  	char *token, *save_ptr;
  	int dir_depth_counter = 0;
@@ -531,4 +697,34 @@ parse_path (char * path)
 	  }
 
 	return dir_names;
+}
+
+struct dir *
+get_target_dir(struct dir * starting_directory, char ** array_of_dir_names, int * index_to_final_name){
+	int i = 0;
+	struct inode * target_inode = NULL;
+	bool success = true;
+	struct dir * target_directory = starting_directory;
+	while(array_of_dir_names[i+1] != NULL && target_directory != NULL)
+	{
+		success = dir_lookup(target_directory, array_of_dir_names[i], &target_inode);
+		if (success)
+		{
+			if (target_inode->data.is_dir)
+			{
+				dir_close(target_directory);
+				target_directory = dir_open(target_inode);
+			}
+			else
+				target_directory = NULL;
+		}
+		else
+			target_directory = NULL;
+
+		i++;
+	}
+
+	*index_to_final_name = i;
+
+	return target_directory;
 }

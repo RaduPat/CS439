@@ -30,7 +30,7 @@ static struct list ready_list;
 static struct list all_list;
 
 /* Idle thread. */
-static struct thread *idle_thread;
+struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
 struct thread *initial_thread;
@@ -191,7 +191,10 @@ thread_create (const char *name, int priority,
   // set parent
   t->parent = thread_current();
 
-  t->curr_dir = t->parent->curr_dir;
+  if (strcmp(name, "main") && strcmp(name, "idle"))
+  {
+    t->curr_dir = dir_reopen(t->parent->curr_dir);
+  }
 
   // create status holder
   struct status_holder * current_statusholder;
@@ -327,6 +330,7 @@ thread_exit (void)
   printf ("%s: exit(%d)\n", thread_current ()->name,
   thread_current ()->status_number);
   file_close(thread_current ()-> code_file);
+  dir_close(thread_current ()->curr_dir);
   close_files(thread_current ()->open_files);
   intr_disable ();
   list_remove (&thread_current ()->allelem);
@@ -500,6 +504,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->curr_dir = NULL;
   /* Eddy and Radu drove here */
   list_init (&t->list_of_children);
 
