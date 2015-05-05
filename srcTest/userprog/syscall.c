@@ -292,7 +292,7 @@ create_h (char *path2file, unsigned initial_size)
 		success = false;
 	}
 
-	if(dir_names[index_to_dir_name] != NULL && success)
+	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
 		success = dir_lookup(target_dir, dir_names[index_to_dir_name], &target_inode);
 
@@ -348,7 +348,7 @@ remove_h (char *path2file)
 		success = false;
 	}
 
-	if(dir_names[index_to_dir_name] != NULL && success)
+	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
 		lock_acquire (&syscall_lock);
 		success = filesys_remove (dir_names[index_to_dir_name], target_dir);
@@ -405,7 +405,7 @@ open_h (char *path2file)
 		else
 			return -1;
 	}
-
+ 	
 	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
 
 	if (target_dir == NULL)
@@ -413,7 +413,7 @@ open_h (char *path2file)
 		success = false;
 	}
 
-	if(dir_names[index_to_dir_name] != NULL && success)
+	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
 		lock_acquire (&syscall_lock);
 		open_file = filesys_open (dir_names[index_to_dir_name], target_dir);
@@ -570,7 +570,7 @@ mkdir_h (const char *path)
 	}
 
 	//LAST ENTRY
-	if(dir_names[index_to_dir_name] != NULL && success)
+	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
 		success = dir_lookup(target_dir, dir_names[index_to_dir_name], &target_inode);
 
@@ -658,7 +658,7 @@ chdir_h (const char *path){
 	}
 
 	//LAST ENTRY
-	if(dir_names[index_to_dir_name] != NULL && success)
+	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
 		success = dir_lookup(target_dir, dir_names[index_to_dir_name], &target_inode);
 
@@ -801,7 +801,7 @@ get_target_dir(struct dir * starting_directory, char ** array_of_dir_names, int 
 		success = dir_lookup(target_directory, array_of_dir_names[i], &target_inode);
 		if (success)
 		{
-			if (target_inode->data.is_dir)
+			if (target_inode->data.is_dir && !target_inode->removed)
 			{
 				dir_close(target_directory);
 				target_directory = dir_open(target_inode);
