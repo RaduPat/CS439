@@ -37,6 +37,8 @@ int close_h (int file_descriptor);
 bool mkdir_h (const char *);
 bool isdir_h (int fd);
 bool chdir_h (const char *);
+int inumber_h (int fd);
+bool readdir_h (int fd, char*);
 
 // checks the validity of a pointer
 void check_pointer (void *pointer);
@@ -210,6 +212,22 @@ syscall_handler (struct intr_frame *f UNUSED)
 	  			f->eax = chdir_h (*dir_path);
 	  		}
 	  	break;
+	  	case SYS_INUMBER:
+	  		{
+	  			check_pointer (esp_int_pointer+1);
+	  			int file_descriptor = * (esp_int_pointer + 1);
+	  			f->eax = inumber_h (file_descriptor);
+	  		}
+	  	break;
+	  	case SYS_READDIR:
+	  		{
+	  			check_pointer (esp_int_pointer+1);
+	  			check_pointer (esp_int_pointer+2);
+	  			int file_descriptor = * (esp_int_pointer+1);
+	  			char ** name = (char **) (esp_int_pointer+2);
+	  			f->eax = readdir_h (file_descriptor, *name);
+	  		}
+	  	break;
   	}
 }
 
@@ -366,6 +384,27 @@ open_h (char *path2file)
 	bool success = true;
 	struct file *open_file = NULL;
 	int index_to_dir_name = -1;
+
+	if (dir_names[0] == NULL && path2file[0] == '/')//accounting for the special case where a path name is nothing but forward slashes
+	{
+		open_file = file_open(starting_dir->inode);
+		if (open_file == NULL)
+		{
+			success = false;
+		}
+		assign_fd (open_file, thread_current () -> open_files);
+
+		dir_close(starting_dir);
+		free(dir_path);
+		free(dir_names);
+
+		if (success)	
+		{
+			return find_fd (thread_current ()->open_files, open_file);
+		}
+		else
+			return -1;
+	}
 
 	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
 
@@ -543,6 +582,17 @@ mkdir_h (const char *path)
 			if(!free_map_allocate(1, &new_dir_sector))
 				PANIC("No space for new directory");
 			success = dir_create(new_dir_sector, 2) && dir_add(target_dir, dir_names[index_to_dir_name], new_dir_sector);
+
+			//adding "." and ".."
+			struct dir * new_dir = dir_open(inode_open(new_dir_sector));
+			if (new_dir != NULL)
+			{
+				success = dir_add(new_dir, ".", new_dir_sector) && dir_add(new_dir, "..", target_dir->inode->sector);
+			}
+			else{
+				success = false;
+			}
+			dir_close(new_dir);
 		}
 	}
 	else
@@ -589,6 +639,17 @@ chdir_h (const char *path){
 	int index_to_dir_name = -1;
 	struct inode * target_inode = NULL;
 
+	if (dir_names[0] == NULL && path[0] == '/')//accounting for the special case where a path name is nothing but forward slashes
+	{
+		dir_close(thread_current()->curr_dir);
+		thread_current()->curr_dir = starting_dir;
+
+		free(dir_path);
+		free(dir_names);
+
+		return success;
+	}
+
 	target_dir = get_target_dir(starting_dir, dir_names, &index_to_dir_name);
 
 	if (target_dir == NULL)
@@ -604,7 +665,7 @@ chdir_h (const char *path){
 		if(success)
 			if (target_inode->data.is_dir)
 			{
-				dir_close(thread_current()->curr_dir);// what if we close the root directory? reopen the root directory
+				dir_close(thread_current()->curr_dir);
 				thread_current()->curr_dir = dir_open(target_inode);
 			}
 			else
@@ -623,6 +684,36 @@ chdir_h (const char *path){
 	}
 	free(dir_path);
 	free(dir_names);
+	return success;
+}
+
+int 
+inumber_h (int fd){
+	struct file * req_file = find_open_file(fd);
+	if (req_file != NULL)
+	{
+		return req_file->inode->sector;
+	}
+	else{
+		return -1;
+	}
+}
+
+bool
+readdir_h (int fd, char* name) 
+{
+	check_pointer(name);
+	struct file * req_file = find_open_file(fd);
+	bool success = false;
+	if (req_file != NULL)
+	{
+		if(req_file->inode->data.is_dir)
+		{
+			struct dir * directory = dir_open(req_file->inode);
+			success = dir_readdir(directory, name);
+			free(directory);
+		}
+	}
 	return success;
 }
 
