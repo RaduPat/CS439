@@ -348,7 +348,9 @@ remove_h (char *path2file)
 		success = false;
 	}
 
-	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
+	if(dir_names[index_to_dir_name] != NULL 
+		&& success 
+		&& !target_dir->inode->removed)
 	{
 		lock_acquire (&syscall_lock);
 		success = filesys_remove (dir_names[index_to_dir_name], target_dir);
@@ -710,7 +712,9 @@ readdir_h (int fd, char* name)
 		if(req_file->inode->data.is_dir)
 		{
 			struct dir * directory = dir_open(req_file->inode);
+			directory->pos = req_file->pos;
 			success = dir_readdir(directory, name);
+			req_file->pos = directory->pos;
 			free(directory);
 		}
 	}

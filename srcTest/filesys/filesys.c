@@ -6,9 +6,11 @@
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
 #include "threads/thread.h"
+#include "lib/kernel/bitmap.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
+extern struct bitmap *free_map; 
 
 extern struct thread * initial_thread;
 extern struct thread * idle_thread;
@@ -77,7 +79,7 @@ filesys_open (const char *name, struct dir * target_dir)
 
   return file_open (inode);
 }
-
+ 
 /* Deletes the file named NAME.
    Returns true if successful, false on failure.
    Fails if no file named NAME exists,

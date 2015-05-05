@@ -141,7 +141,7 @@ bring_in_sector(bool must_grow, block_sector_t * target_sector, unsigned num_sub
   int i;
   if(must_grow && *target_sector == -1){//when writing, and trying to grow, grow indirect block 
     if(!allocate_single_sector(target_sector))
-      PANIC("Not Enough Sectors (indirect_block)");
+      PANIC("Not Enough Sectors");
     else{
       storage_location =  calloc(1, BLOCK_SECTOR_SIZE);
       for(i = 0; i < num_sub_blocks; i++){

@@ -115,6 +115,23 @@ dir_lookup (const struct dir *dir, const char *name,
   return *inode != NULL;
 }
 
+/* Tests if the directory is in use */
+bool
+is_dir_in_use (const struct dir *dir){
+  struct dir_entry e;
+  size_t ofs;
+  
+  ASSERT (dir != NULL);
+
+  ofs = 0;
+  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e){
+    if (e.in_use && strcmp(e.name, ".") && strcmp(e.name, "..")) 
+      return true;
+  }
+  return false;
+}
+
 /* Adds a file named NAME to DIR, which must not already contain a
    file by that name.  The file's inode is in sector
    INODE_SECTOR.
@@ -169,6 +186,7 @@ dir_remove (struct dir *dir, const char *name)
 {
   struct dir_entry e;
   struct inode *inode = NULL;
+  struct dir * dir_to_remove = NULL;
   bool success = false;
   off_t ofs;
 
@@ -184,6 +202,17 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  if (inode->data.is_dir)
+  {
+    dir_to_remove = dir_open(inode);
+  }
+  
+
+  // if it's a directory that's in use, don't delete it
+  if(dir_to_remove != NULL && is_dir_in_use(dir_to_remove)){
+    goto done;
+  }
+
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
@@ -194,7 +223,10 @@ dir_remove (struct dir *dir, const char *name)
   success = true;
 
  done:
-  inode_close (inode);
+  if (inode->data.is_dir)
+    dir_close(dir_to_remove);
+  else
+    inode_close (inode);
   return success;
 }
 
@@ -205,7 +237,6 @@ bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
-
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
       dir->pos += sizeof e;
