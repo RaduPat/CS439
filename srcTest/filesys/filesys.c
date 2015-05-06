@@ -43,6 +43,9 @@ filesys_init (bool format)
 void
 filesys_done (void) 
 {
+  struct dir * root = dir_open_root();
+  root->inode->open_cnt = 0;
+  dir_close(dir_open_root());
   free_map_close ();
 }
 
