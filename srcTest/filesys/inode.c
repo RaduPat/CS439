@@ -6,6 +6,7 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "threads/thread.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
@@ -200,7 +201,7 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length, bool is_dir)
 {
-
+//printf("############## %s inode_create\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
 
   struct inode_disk *disk_inode = NULL;
@@ -346,6 +347,7 @@ inode_create (block_sector_t sector, off_t length, bool is_dir)
 struct inode *
 inode_open (block_sector_t sector)
 {
+  //printf("############## %s inode_open\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
 
   struct list_elem *e;
@@ -395,6 +397,7 @@ inode_open (block_sector_t sector)
 struct inode *
 inode_reopen (struct inode *inode)
 {
+  //printf("############## %s inode_reopen\n", thread_current()->name);
   if(!lock_held_by_current_thread (&master_inode_lock))//because inode_reopen is also called in inode_open 
     lock_acquire(&master_inode_lock);
 
@@ -408,6 +411,7 @@ inode_reopen (struct inode *inode)
 block_sector_t
 inode_get_inumber (const struct inode *inode)
 {
+  //printf("############## %s inode_get_inumber\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
   block_sector_t inode_sector = inode->sector;
   lock_release(&master_inode_lock);
@@ -421,12 +425,16 @@ inode_get_inumber (const struct inode *inode)
 void
 inode_close (struct inode *inode) 
 {
+  //printf("############## %s inode_close\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
 
   int i,j;
   /* Ignore null pointer. */
   if (inode == NULL)
+  {
+    lock_release(&master_inode_lock);
     return;
+  }
 
   //printf("CLOSE: inode_disk address %x\n", &inode->data);
 
@@ -534,6 +542,7 @@ inode_close (struct inode *inode)
 void
 inode_remove (struct inode *inode) 
 {
+  //printf("############## %s inode_remove\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
   ASSERT (inode != NULL);
   inode->removed = true;
@@ -546,6 +555,7 @@ inode_remove (struct inode *inode)
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
+  //printf("############## %s inode_read_at\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
@@ -617,6 +627,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   bool master_lock_held_outside = true;
   if(!lock_held_by_current_thread (&master_inode_lock))
   {
+  //printf("############## %s inode_write_at\n", thread_current()->name);
     lock_acquire(&master_inode_lock);
     master_lock_held_outside = false;
   }
@@ -628,12 +639,16 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     inode->data.length = size+offset;
 
   if (inode->deny_write_cnt)
+  {
+    if(!master_lock_held_outside)
+      lock_release(&master_inode_lock);
     return 0;
+  }
 
   while (size > 0) 
     {
 
-      //printf("#################\n");
+      ////printf("#################\n", thread_current()->name);
       //printf("#########%x %d %d\n",inode, offset / BLOCK_SECTOR_SIZE, sector_idx);
       block_sector_t sector_idx = byte_to_sector (inode, offset, true);
   
@@ -693,6 +708,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 void
 inode_deny_write (struct inode *inode) 
 {
+  //printf("############## %s inode_deny_write\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
   inode->deny_write_cnt++;
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
@@ -705,6 +721,7 @@ inode_deny_write (struct inode *inode)
 void
 inode_allow_write (struct inode *inode) 
 {
+  //printf("############## %s inode_allow_write\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
   ASSERT (inode->deny_write_cnt > 0);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
@@ -716,6 +733,7 @@ inode_allow_write (struct inode *inode)
 off_t
 inode_length (const struct inode *inode)
 {
+  //printf("############## %s inode_length\n", thread_current()->name);
   lock_acquire(&master_inode_lock);
   int inode_data_length = inode->data.length;
   lock_release(&master_inode_lock);

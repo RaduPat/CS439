@@ -68,7 +68,7 @@ void assign_fd(struct file *open_file, struct file * files[]);
 void shutdown_power_off(void);
 
 /* lock to synchronize access to the filesystem */
-static struct lock syscall_lock;
+struct lock syscall_lock;
 
 void
 syscall_init (void) 
@@ -252,9 +252,9 @@ tid_t
 exec_h (char *cmd_line)
 {
 	check_pointer (cmd_line);
-	lock_acquire (&syscall_lock);
+	//lock_acquire (&syscall_lock);
 	tid_t tid = process_execute (cmd_line);
-	lock_release (&syscall_lock);
+	//lock_release (&syscall_lock);
 
 	return tid;
 }
@@ -414,7 +414,7 @@ open_h (char *path2file)
 	{
 		success = false;
 	}
-
+  
 	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
 		lock_acquire (&syscall_lock);

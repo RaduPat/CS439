@@ -22,6 +22,8 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+extern struct lock syscall_lock;
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -38,7 +40,7 @@ process_execute (const char *file_name)
 
   char *fn_copy;
   tid_t tid;
-
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -52,7 +54,9 @@ process_execute (const char *file_name)
 
   /* Eddy drove here */
   thread_current ()->childExecSuccess = false;
+  lock_acquire (&syscall_lock);    
   sema_down (&thread_current ()->exec_sema);
+  lock_release (&syscall_lock); 
 
   if (!thread_current ()->childExecSuccess)
     return TID_ERROR;
