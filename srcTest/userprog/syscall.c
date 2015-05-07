@@ -300,9 +300,9 @@ create_h (char *path2file, unsigned initial_size)
 			success = false; //the file is already created
 		else
 		{
-			lock_acquire (&syscall_lock);
+			//lock_acquire (&syscall_lock);
 			success = filesys_create (dir_names[index_to_dir_name], (off_t) initial_size, target_dir);
-			lock_release (&syscall_lock);
+			//lock_release (&syscall_lock);
 		}
 	}
 	else
@@ -352,9 +352,9 @@ remove_h (char *path2file)
 		&& success 
 		&& !target_dir->inode->removed)
 	{
-		lock_acquire (&syscall_lock);
+		//lock_acquire (&syscall_lock);
 		success = filesys_remove (dir_names[index_to_dir_name], target_dir);
-		lock_release (&syscall_lock);
+		//lock_release (&syscall_lock);
 	}
 	else
 		success = false;
@@ -473,9 +473,9 @@ read_h (int file_descriptor, void *buffer, unsigned size)
 			struct file *found_file = find_open_file (file_descriptor);
 			if (found_file != NULL) 
 			{
-				lock_acquire (&syscall_lock);
+				//lock_acquire (&syscall_lock);
 				bytes_read = file_read (found_file, buffer, size);
-				lock_release (&syscall_lock);
+				//lock_release (&syscall_lock);
 			}
 			return bytes_read;
 		}
@@ -496,9 +496,9 @@ write_h (int file_descriptor, void *buffer, unsigned size)
 			struct file *found_file = find_open_file (file_descriptor);
 			if (found_file != NULL && !found_file->inode->data.is_dir)
 				{
-					lock_acquire (&syscall_lock);
+					//lock_acquire (&syscall_lock);
 					bytes_written = file_write (found_file, buffer, size);
-					lock_release (&syscall_lock);
+					//lock_release (&syscall_lock);
 				}
 			return bytes_written;
 		}
@@ -511,9 +511,9 @@ seek_h (int file_descriptor, unsigned position)
 	struct file *found_file = find_open_file (file_descriptor);
 	if (found_file != NULL)
 		{
-			lock_acquire (&syscall_lock);
+			//lock_acquire (&syscall_lock);
 			file_seek (found_file, (off_t) position);
-			lock_release (&syscall_lock);
+			//lock_release (&syscall_lock);
 			return 1; //returning 1 and -1 to signify pushing to EAX
 		}
 	return -1;
@@ -525,9 +525,9 @@ tell_h (int file_descriptor)
 	struct file *found_file = find_open_file (file_descriptor);
 	if (found_file != NULL)
 		{
-			lock_acquire (&syscall_lock);
+			//lock_acquire (&syscall_lock);
 			unsigned ret =  (unsigned) file_tell (found_file);
-			lock_release (&syscall_lock);
+			//lock_release (&syscall_lock);
 			return ret;
 		}
 	return -1;
