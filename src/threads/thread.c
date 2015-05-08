@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "filesys/directory.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -25,14 +26,14 @@
 static struct list ready_list;
 
 /* List of all processes.  Processes are added to this list
-   when they are first scheduled and removed when they exit. */
+   when they are first scheduled and removed when they exFit. */
 static struct list all_list;
 
 /* Idle thread. */
-static struct thread *idle_thread;
+struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
-static struct thread *initial_thread;
+struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
@@ -41,11 +42,11 @@ void set_denywrite (bool);
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
-  {
+{
     void *eip;                  /* Return address. */
     thread_func *function;      /* Function to call. */
     void *aux;                  /* Auxiliary data for function. */
-  };
+};
 
 /* Statistics. */
 static long long idle_ticks;    /* # of timer ticks spent idle. */
@@ -190,6 +191,9 @@ thread_create (const char *name, int priority,
   // set parent
   t->parent = thread_current();
 
+  if (strcmp(name, "main") && strcmp(name, "idle"))
+    t->curr_dir = dir_reopen(t->parent->curr_dir);
+
   // create status holder
   struct status_holder * current_statusholder;
   current_statusholder = palloc_get_page (PAL_ZERO);
@@ -197,6 +201,7 @@ thread_create (const char *name, int priority,
   current_statusholder->status = -1;
   current_statusholder->tid = tid;
   current_statusholder->owner_thread = t;
+  sema_init(&current_statusholder->wait_sema, 0);
 
   // link status holder to thread
   t->stat_holder = current_statusholder;
@@ -313,17 +318,18 @@ thread_exit (void)
 {
   ASSERT (!intr_context ());
 
-#ifdef USERPROG
-  process_exit ();
-#endif
+  #ifdef USERPROG
+    process_exit ();
+  #endif
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
-  sema_up (&thread_current ()->wait_sema);
+  sema_up (&(thread_current ()->stat_holder)->wait_sema);
   printf ("%s: exit(%d)\n", thread_current ()->name,
   thread_current ()->status_number);
   file_close(thread_current ()-> code_file);
+  dir_close(thread_current ()->curr_dir);
   close_files(thread_current ()->open_files);
   intr_disable ();
   list_remove (&thread_current ()->allelem);
@@ -497,20 +503,18 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->curr_dir = NULL;
   /* Eddy and Radu drove here */
   list_init (&t->list_of_children);
 
   sema_init (&t->exec_sema, 0);
-  sema_init (&t->wait_sema, 0);
 
   t->index_fd = 2;
   t->code_file = NULL;
 
   int i;
   for(i = 2; i < 128; i++)
-  {
     t->open_files[i] = NULL;
-  }
 
   list_push_back (&all_list, &t->allelem);
 }
@@ -635,11 +639,10 @@ close_files(struct file * files[])
 {
     int i;
     for(i = 2; i <  MAX_FILES ; i++)
-    {
-        if(files[i] != NULL)  {
-            file_close(files[i]);
-        }
-    }
+      {
+          if(files[i] != NULL)  
+              file_close(files[i]);
+      }
 }
 
 void
@@ -648,14 +651,14 @@ delete_children(){
     struct list_elem * temp;
     for (e = list_begin (&thread_current ()->list_of_children);
          e != list_end (&thread_current ()->list_of_children); )
-    {
-        struct status_holder *s_holder = list_entry (e, struct status_holder, child_elem);
-        
-        temp = e;
-        e = list_next (e);
-        
-        list_remove(temp);
-        s_holder->owner_thread->stat_holder = NULL;
-        palloc_free_page(s_holder);
-    }
+      {
+          struct status_holder *s_holder = list_entry (e, struct status_holder, child_elem);
+          
+          temp = e;
+          e = list_next (e);
+          
+          list_remove(temp);
+          s_holder->owner_thread->stat_holder = NULL;
+          palloc_free_page(s_holder);
+      }
 }

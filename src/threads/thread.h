@@ -31,8 +31,9 @@ typedef int tid_t;
   {
     tid_t tid;
     int status;
-    struct list_elem child_elem;
+    struct list_elem child_elem; 
     struct thread * owner_thread; // the thread that owns this status holder
+    struct semaphore wait_sema;   /*semaphore to synchronize the wait sys call */
   };
 
 
@@ -113,10 +114,11 @@ struct thread
     int status_number;                    /* A field to hold the status of the thread in case the status holder gets deleted by the parent */
     struct list list_of_children;         /* list of children */
     struct thread * parent;               /* ptr to parent */
-    struct semaphore wait_sema;           /*semaphore to synchronize the wait sys call */
     struct file * open_files[MAX_FILES];  /* list that hold all open files containing file descriptors */
     struct file * code_file;               /* file that the thread is currently executing */
     int index_fd;                         /* # calls to file open, starting from 2 */
+
+    struct dir * curr_dir;                /* current working directory */
 
 
 #ifdef USERPROG

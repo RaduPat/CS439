@@ -22,6 +22,8 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+extern struct lock syscall_lock;
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -38,7 +40,7 @@ process_execute (const char *file_name)
 
   char *fn_copy;
   tid_t tid;
-
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -117,7 +119,7 @@ process_wait (tid_t child_tid)
       
       if (s_holder->tid == child_tid)
         {
-          sema_down (&(s_holder->owner_thread)->wait_sema);
+          sema_down (&s_holder->wait_sema);
             int number_status = s_holder->status;
           
           //remove the status_holder (reap the child)
@@ -275,7 +277,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   strlcpy (t->name, argv[0], sizeof t->name);
 
   /* Open executable file. */
-  file = filesys_open (argv[0]);
+  // we assume that executables are always placed in the root directory
+  struct dir * root_dir = dir_open_root();
+  file = filesys_open (argv[0], root_dir);
+  dir_close(root_dir);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", argv[0]);
@@ -370,7 +375,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
-
 static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
