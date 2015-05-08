@@ -1,4 +1,5 @@
 #include "filesys/file.h"
+#include "threads/thread.h"
 
 /* Opens a file for the given INODE, of which it takes ownership,
    and returns the new file.  Returns a null pointer if an
@@ -12,6 +13,7 @@ file_open (struct inode *inode)
       file->inode = inode;
       file->pos = 0;
       file->deny_write = false;
+      //printf("$$$$$$$$$ 2 %s - %d\n", thread_current()->name, thread_current()->tid);
       return file;
     }
   else

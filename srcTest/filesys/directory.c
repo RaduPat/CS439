@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <list.h>
+#include "threads/thread.h"
 
 
 /* Creates a directory with space for ENTRY_CNT entries in the
@@ -103,6 +104,7 @@ dir_lookup (const struct dir *dir, const char *name,
             struct inode **inode) 
 {
   struct dir_entry e;
+  //printf("$$$$$$$$$ 1 %s - %d\n", thread_current()->name, thread_current()->tid);
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);

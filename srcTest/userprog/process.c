@@ -54,9 +54,9 @@ process_execute (const char *file_name)
 
   /* Eddy drove here */
   thread_current ()->childExecSuccess = false;
-  lock_acquire (&syscall_lock);    
+  //lock_acquire (&syscall_lock);    
   sema_down (&thread_current ()->exec_sema);
-  lock_release (&syscall_lock); 
+  // lock_release (&syscall_lock); 
 
   if (!thread_current ()->childExecSuccess)
     return TID_ERROR;
@@ -112,6 +112,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
+  //printf("+++++++++++ waiting %d\n", child_tid);
   /* Andrew drove here */
   struct list_elem * e;
   for (e = list_begin (&thread_current ()->list_of_children);
@@ -121,7 +122,7 @@ process_wait (tid_t child_tid)
       
       if (s_holder->tid == child_tid)
         {
-          sema_down (&(s_holder->owner_thread)->wait_sema);
+          sema_down (&s_holder->wait_sema);
             int number_status = s_holder->status;
           
           //remove the status_holder (reap the child)

@@ -68,13 +68,13 @@ void assign_fd(struct file *open_file, struct file * files[]);
 void shutdown_power_off(void);
 
 /* lock to synchronize access to the filesystem */
-struct lock syscall_lock;
+//struct lock syscall_lock;
 
 void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init (&syscall_lock);
+  //lock_init (&syscall_lock);
 }
 
 static void
@@ -417,9 +417,9 @@ open_h (char *path2file)
   
 	if(dir_names[index_to_dir_name] != NULL && success && !target_dir->inode->removed)
 	{
-		lock_acquire (&syscall_lock);
+		//lock_acquire (&syscall_lock);
 		open_file = filesys_open (dir_names[index_to_dir_name], target_dir);
-		lock_release (&syscall_lock);
+		//lock_release (&syscall_lock);
 		if (open_file == NULL)
 			success = false;
 		else

@@ -188,7 +188,7 @@ static struct list open_inodes;
 void
 inode_init (void) 
 {
-  //lock_init (&open_inodes_lock);
+  lock_init (&open_inodes_lock);
   lock_init (&master_inode_lock);
   list_init (&open_inodes);
 }
@@ -572,7 +572,10 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector (inode, offset, have_to_grow);
       if(sector_idx == -1) //Trying to read an unallocated sector
+      {
+        lock_release(&master_inode_lock);
         return bytes_read; 
+      }
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */

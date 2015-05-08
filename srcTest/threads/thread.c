@@ -203,6 +203,7 @@ thread_create (const char *name, int priority,
   current_statusholder->status = -1;
   current_statusholder->tid = tid;
   current_statusholder->owner_thread = t;
+  sema_init(&current_statusholder->wait_sema, 0);
 
   // link status holder to thread
   t->stat_holder = current_statusholder;
@@ -323,10 +324,12 @@ thread_exit (void)
   process_exit ();
 #endif
 
+  //printf("+++++++++++ %d\n", thread_tid());
+
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
-  sema_up (&thread_current ()->wait_sema);
+  sema_up (&(thread_current ()->stat_holder)->wait_sema);
   printf ("%s: exit(%d)\n", thread_current ()->name,
   thread_current ()->status_number);
   file_close(thread_current ()-> code_file);
@@ -509,7 +512,6 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->list_of_children);
 
   sema_init (&t->exec_sema, 0);
-  sema_init (&t->wait_sema, 0);
 
   t->index_fd = 2;
   t->code_file = NULL;
