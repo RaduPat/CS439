@@ -63,23 +63,6 @@ byte_to_sector (struct inode *inode, off_t pos, bool must_grow)
         // if accessing in a read, don't do anything
         return -1;
       }
-      /*if(for_write && inode->data.index_block == -1){//when writing, and trying to grow, grow
-        if(!allocate_single_sector(&inode->data.index_block))
-          PANIC("Not Enough Sectors (index_block)");
-        else{
-          inode->index_block_pointer =  calloc(1, sizeof (struct index_block));
-          for(i = 0; i < INDEX_DIRECT_BLOCKS; i++){
-            inode->index_block_pointer->direct_blocks[i] = -1;
-          }
-        }
-      }
-      else if(!for_write && inode->data.index_block == -1){//when reading, and trying to grow, don't grow
-        return -1;
-      }
-      else{//general lazy loading of sectors
-        inode->index_block_pointer =  calloc(1, sizeof (struct index_block));
-        block_read(fs_device, inode->data.index_block, inode->index_block_pointer);
-      }  */
     }
     if(must_grow && inode->index_block_pointer->direct_blocks[sector_index-INODE_DIRECT_BLOCKS] == -1)
     {
@@ -102,23 +85,6 @@ byte_to_sector (struct inode *inode, off_t pos, bool must_grow)
         { // if accessing in a read, don't do anything
           return -1;
         }
-        /*if(for_write && inode->data.doubly_indirect_block == -1){//when writing, and trying to grow, grow indirect block 
-          if(!allocate_single_sector(&inode->data.doubly_indirect_block))
-            PANIC("Not Enough Sectors (indirect_block)");
-          else{
-            inode->indirect_block_pointer =  calloc(1, sizeof (struct indirect_block));
-            for(i = 0; i < INDIRECT_INDEX_BLOCKS; i++){
-              inode->indirect_block_pointer->index_sectors[i] = -1;
-            }
-          }
-        }
-        else if(!for_write && inode->data.doubly_indirect_block == -1){//when reading, and trying to grow, don't grow
-          return -1;
-        }
-        else{// lazy loading of indirect sector
-          inode->indirect_block_pointer = calloc(1, sizeof (struct indirect_block));
-          block_read(fs_device, inode->data.doubly_indirect_block, inode->indirect_block_pointer);
-        }*/
       }
 
       inode->indirect_index_blocks[index_block_index] = (struct index_block *) bring_in_sector(must_grow, &inode->indirect_block_pointer->index_sectors[index_block_index], INDEX_DIRECT_BLOCKS);
@@ -394,7 +360,7 @@ inode_open (block_sector_t sector)
   //lock_release(&master_inode_lock);
   return inode;
 }
-
+ 
 /* Reopens and returns INODE. */
 struct inode *
 inode_reopen (struct inode *inode)
@@ -561,7 +527,11 @@ off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
   //printf("############## %s inode_read_at\n", thread_current()->name);
-  lock_acquire(&inode->inode_lock);
+  //lock_acquire(&inode->inode_lock);
+  if (inode->data.is_dir)
+  {
+    lock_acquire(&inode->inode_lock);
+  }
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
@@ -578,7 +548,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       block_sector_t sector_idx = byte_to_sector (inode, offset, have_to_grow);
       if(sector_idx == -1) //Trying to read an unallocated sector
       {
-        lock_release(&inode->inode_lock);
+        if (inode->data.is_dir)
+        {
+          lock_release(&inode->inode_lock);
+        }
+        //lock_release(&inode->inode_lock);
         return bytes_read; 
       }
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
@@ -619,7 +593,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     }
   free (bounce);
 
-  lock_release(&inode->inode_lock);
+  if (inode->data.is_dir)
+  {
+    lock_release(&inode->inode_lock);
+  }
+  //lock_release(&inode->inode_lock);
   return bytes_read;
 }
 
@@ -632,23 +610,35 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
-  bool master_lock_held_outside = true;
+  bool lock_held_outside = true;
+  off_t size_required = size;
+  off_t inode_curr_length;
+  //off_t input_offset = offset;
+  //printf("############## %s inode_write_at\n", thread_current()->name);
   if(!lock_held_by_current_thread (&inode->inode_lock))
   {
-  //printf("############## %s inode_write_at\n", thread_current()->name);
     lock_acquire(&inode->inode_lock);
-    master_lock_held_outside = false;
+    inode_curr_length = inode->data.length;
+    lock_held_outside = false;
+    if (!(inode->data.is_dir || size+offset > inode->data.length))
+    {
+      lock_release(&inode->inode_lock);
+    }
+    else if (size+offset > inode->data.length)
+    {
+      inode_curr_length = size+offset;
+    }
   }
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
 
-  if(size+offset > inode->data.length)//do we have to use >=?
-    inode->data.length = size+offset;
+  //printf("========= size %d offset %d inode->data.length %d\n", size, offset, inode->data.length);
+  
 
   if (inode->deny_write_cnt)
   {
-    if(!master_lock_held_outside)
+    if(!lock_held_outside && lock_held_by_current_thread (&inode->inode_lock))
       lock_release(&inode->inode_lock);
     return 0;
   }
@@ -663,7 +653,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = inode->data.length - offset;
+      off_t inode_left = inode_curr_length - offset;
       int sector_left = BLOCK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -705,7 +695,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     }
   free (bounce);
 
-  if(!master_lock_held_outside)
+  inode->data.length = inode_curr_length;
+
+  //printf("******* size %d offset %d inode->data.length %d\n", size, offset, inode->data.length);
+
+  if(!lock_held_outside && lock_held_by_current_thread (&inode->inode_lock))
     lock_release(&inode->inode_lock);
   return bytes_written;
 }
