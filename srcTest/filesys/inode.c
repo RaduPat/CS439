@@ -202,7 +202,7 @@ bool
 inode_create (block_sector_t sector, off_t length, bool is_dir)
 {
 //printf("############## %s inode_create\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  //lock_acquire(&master_inode_lock);
 
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -256,7 +256,7 @@ inode_create (block_sector_t sector, off_t length, bool is_dir)
     //printf("CREATE- inode_disk address: %x\n", disk_inode);
     block_write (fs_device, sector, disk_inode);
     free(disk_inode);
-    lock_release(&master_inode_lock);
+    //lock_release(&master_inode_lock);
 
     return success;
   }
@@ -348,24 +348,26 @@ struct inode *
 inode_open (block_sector_t sector)
 {
   //printf("############## %s inode_open\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  //lock_acquire(&master_inode_lock);
 
   struct list_elem *e;
   struct inode *inode;
   /* Check whether this inode is already open. */
-  //lock_acquire(&open_inodes_lock);
+  lock_acquire(&open_inodes_lock);
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e)) 
     {
       inode = list_entry (e, struct inode, elem);
+      lock_acquire(&inode->inode_lock);
       if (inode->sector == sector) 
         {
           inode_reopen (inode);
+          lock_release(&open_inodes_lock);//inode_lock released in inode_reopen
           return inode; 
         }
+      lock_release(&inode->inode_lock);
     }
-  //lock_release(&open_inodes_lock);
-
+  
   /* Allocate memory. */
   inode = malloc (sizeof *inode);
   if (inode == NULL)
@@ -374,22 +376,22 @@ inode_open (block_sector_t sector)
   //printf("OPEN: inode_disk address %x\n", &inode->data);
 
   /* Initialize. */
-  //lock_acquire(&open_inodes_lock);
   list_push_front (&open_inodes, &inode->elem);
-  //lock_release(&open_inodes_lock);
+  lock_release(&open_inodes_lock);
   inode->sector = sector;
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
   inode->index_block_pointer = NULL;
   inode->indirect_block_pointer = NULL;
+  lock_init(&inode->inode_lock);
   int i;
   for (i = 0; i < INDIRECT_INDEX_BLOCKS; ++i)
   {
     inode->indirect_index_blocks[i] = NULL;
   }
   block_read (fs_device, inode->sector, &inode->data);
-  lock_release(&master_inode_lock);
+  //lock_release(&master_inode_lock);
   return inode;
 }
 
@@ -398,12 +400,12 @@ struct inode *
 inode_reopen (struct inode *inode)
 {
   //printf("############## %s inode_reopen\n", thread_current()->name);
-  if(!lock_held_by_current_thread (&master_inode_lock))//because inode_reopen is also called in inode_open 
-    lock_acquire(&master_inode_lock);
+  if(!lock_held_by_current_thread (&inode->inode_lock))//because inode_reopen is also called in inode_open 
+    lock_acquire(&inode->inode_lock);
 
   if (inode != NULL)
     inode->open_cnt++;
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
   return inode;
 }
 
@@ -412,9 +414,9 @@ block_sector_t
 inode_get_inumber (const struct inode *inode)
 {
   //printf("############## %s inode_get_inumber\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  lock_acquire(&inode->inode_lock);
   block_sector_t inode_sector = inode->sector;
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
 
   return inode_sector;
 }
@@ -426,15 +428,14 @@ void
 inode_close (struct inode *inode) 
 {
   //printf("############## %s inode_close\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
 
   int i,j;
   /* Ignore null pointer. */
   if (inode == NULL)
   {
-    lock_release(&master_inode_lock);
     return;
   }
+  lock_acquire(&inode->inode_lock);
 
   //printf("CLOSE: inode_disk address %x\n", &inode->data);
 
@@ -442,7 +443,9 @@ inode_close (struct inode *inode)
   if (--inode->open_cnt == 0)
     {
       /* Remove from inode list and release lock. */
+      lock_acquire(&open_inodes_lock);
       list_remove (&inode->elem);
+      lock_release(&open_inodes_lock);
  
       /* Deallocate blocks if removed. */
       if (inode->removed) 
@@ -532,9 +535,11 @@ inode_close (struct inode *inode)
           free(inode->indirect_index_blocks[i]);
         }
       }
-      free (inode); 
+      lock_release(&inode->inode_lock);
+      free (inode);
+      return;
     }
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
@@ -543,10 +548,10 @@ void
 inode_remove (struct inode *inode) 
 {
   //printf("############## %s inode_remove\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  lock_acquire(&inode->inode_lock);
   ASSERT (inode != NULL);
   inode->removed = true;
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -556,7 +561,7 @@ off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) 
 {
   //printf("############## %s inode_read_at\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  lock_acquire(&inode->inode_lock);
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
@@ -573,7 +578,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       block_sector_t sector_idx = byte_to_sector (inode, offset, have_to_grow);
       if(sector_idx == -1) //Trying to read an unallocated sector
       {
-        lock_release(&master_inode_lock);
+        lock_release(&inode->inode_lock);
         return bytes_read; 
       }
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
@@ -614,7 +619,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     }
   free (bounce);
 
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
   return bytes_read;
 }
 
@@ -628,10 +633,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset) 
 {
   bool master_lock_held_outside = true;
-  if(!lock_held_by_current_thread (&master_inode_lock))
+  if(!lock_held_by_current_thread (&inode->inode_lock))
   {
   //printf("############## %s inode_write_at\n", thread_current()->name);
-    lock_acquire(&master_inode_lock);
+    lock_acquire(&inode->inode_lock);
     master_lock_held_outside = false;
   }
   const uint8_t *buffer = buffer_;
@@ -644,7 +649,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
   {
     if(!master_lock_held_outside)
-      lock_release(&master_inode_lock);
+      lock_release(&inode->inode_lock);
     return 0;
   }
 
@@ -701,7 +706,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   free (bounce);
 
   if(!master_lock_held_outside)
-    lock_release(&master_inode_lock);
+    lock_release(&inode->inode_lock);
   return bytes_written;
 }
 
@@ -712,10 +717,10 @@ void
 inode_deny_write (struct inode *inode) 
 {
   //printf("############## %s inode_deny_write\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  lock_acquire(&inode->inode_lock);
   inode->deny_write_cnt++;
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
 }
 
 /* Re-enables writes to INODE.
@@ -725,11 +730,11 @@ void
 inode_allow_write (struct inode *inode) 
 {
   //printf("############## %s inode_allow_write\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  lock_acquire(&inode->inode_lock);
   ASSERT (inode->deny_write_cnt > 0);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
   inode->deny_write_cnt--;
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
 }
 
 /* Returns the length, in bytes, of INODE's data. */
@@ -737,8 +742,8 @@ off_t
 inode_length (const struct inode *inode)
 {
   //printf("############## %s inode_length\n", thread_current()->name);
-  lock_acquire(&master_inode_lock);
+  lock_acquire(&inode->inode_lock);
   int inode_data_length = inode->data.length;
-  lock_release(&master_inode_lock);
+  lock_release(&inode->inode_lock);
   return inode_data_length;
 }

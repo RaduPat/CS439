@@ -5,6 +5,7 @@
 #include <list.h>
 #include "filesys/off_t.h"
 #include "devices/block.h"
+#include "threads/synch.h"
 
 
 #define INODE_DIRECT_BLOCKS 123
@@ -46,6 +47,8 @@ struct inode
     struct index_block * index_block_pointer;
     struct indirect_block * indirect_block_pointer;
     struct index_block * indirect_index_blocks[INDIRECT_INDEX_BLOCKS];
+
+    struct lock inode_lock;
   };
 
 struct bitmap;
